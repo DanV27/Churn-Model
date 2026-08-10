@@ -1,5 +1,6 @@
 
-#Imports
+import joblib
+
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
@@ -11,11 +12,10 @@ from sklearn.model_selection import cross_val_score
 #read csv file
 df = pd.read_csv('WA_Fn-UseC_-Telco-Customer-Churn.csv')
 #dropping customer since it is not needed
-df = df.drop(columns=['customerID']) #DROPS customerID
-#Convert the actual DataFrame column and save it back
-df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce')
-#Drop rows if total charges is NaN
-df = df.dropna(subset=['TotalCharges'])
+df = df[['tenure', 'MonthlyCharges', 'Contract', 'InternetService', 'PaymentMethod', 'OnlineSecurity', 'PaperlessBilling','Churn']]
+
+
+
 # X takes everything EXCEPT the last column
 X = df.iloc[:, :-1] #Features
 # y takes ONLY the last column
@@ -109,3 +109,33 @@ print(f"Precision: {precision_tuned :.4f}")
 print(f"Recall:    {recall_tuned :.4f}")
 print(f"F1-Score:  {f1_tuned :.4f}")
 print(f"ROC-AUC:   {roc_auc_tuned :.4f}")
+print("====================== SAVING MODEL & SCALER =======================")
+# Save the tuned machine learning model
+joblib.dump(best_model, "churn_model.pkl")
+print("Saved tuned model to 'churn_model.pkl'")
+
+# Save the scaler (Crucial! You need this to scale future production data)
+joblib.dump(scaler, "scaler.pkl")
+print("Saved scaler to 'scaler.pkl'")
+print('=====================================================================')
+# 2. Extract and match importance scores to feature names
+importances = model.feature_importances_
+feature_importance_df = pd.DataFrame({
+    'Feature': X_train.columns,
+    'Importance': importances
+}).sort_values(by='Importance', ascending=False)
+
+print(feature_importance_df)
+print(len(importances), len(X_train.columns))
+
+#features to rank on...
+"""Numeric:
+tenure
+MonthlyCharges
+
+Categorical:
+Contract — Month-to-month, One year, Two year
+InternetService — DSL, Fiber optic, No
+PaymentMethod — Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic)
+OnlineSecurity — Yes, No, No internet service
+PaperlessBilling — Yes, No"""
