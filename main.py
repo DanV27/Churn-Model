@@ -1,14 +1,19 @@
-from fastapi import FastAPI
+import joblib
+import pandas as pd
 
-# Initialize the application instance
-app = FastAPI()
+#Testing churn model on a test data set!
 
-# Define a path operation decorator for HTTP GET requests
-@app.get("/")
-def read_root():
-    return {"status": "success", "message": "Hello World"}
+pipeline = joblib.load('model/churn_model.pkl')
 
-# Define an endpoint with a path parameter and query parameter
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "query_parameter": q}
+customer = pd.DataFrame([{
+    'tenure': 12,
+    'MonthlyCharges': 79.90,
+    'Contract': 'Month-to-month',
+    'InternetService': 'Fiber optic',
+    'PaymentMethod': 'Electronic check',
+    'OnlineSecurity': 'No',
+    'PaperlessBilling': 'Yes'
+}])
+
+prob = pipeline.predict_proba(customer)[:, 1][0]
+print(f"Churn probability: {prob:.2%}")
