@@ -1,19 +1,50 @@
 import joblib
 import pandas as pd
-
-#Testing churn model on a test data set!
+from fastapi import FastAPI, status
+from pydantic import BaseModel
 
 pipeline = joblib.load('model/churn_model.pkl')
 
-customer = pd.DataFrame([{
-    'tenure': 12,
-    'MonthlyCharges': 79.90,
-    'Contract': 'Month-to-month',
-    'InternetService': 'Fiber optic',
-    'PaymentMethod': 'Electronic check',
-    'OnlineSecurity': 'No',
-    'PaperlessBilling': 'Yes'
-}])
+# 1. Request schema — the 7 input features (NO Churn, that's what we predict)
+class CustomerFeatures(BaseModel):
+    tenure: int
+    MonthlyCharges: float
+    Contract: str
+    InternetService: str
+    PaymentMethod: str
+    OnlineSecurity: str
+    PaperlessBilling: str
 
-prob = pipeline.predict_proba(customer)[:, 1][0]
-print(f"Churn probability: {prob:.2%}")
+# 2. Response schema — what the caller gets back
+class PredictionResponse(BaseModel):
+    churn_probability: float
+    will_churn: bool
+
+app = FastAPI()
+
+@app.get("/health", status_code=status.HTTP_200_OK)
+def health_check():
+    return {"status": "healthy"}
+
+@app.get("/")
+def home():
+    return {"message": "Welcome! Go to /health for the health check."}
+
+@app.post("/predict", response_model=PredictionResponse)
+def predict(customer: CustomerFeatures):
+    row = pd.DataFrame([{
+        'tenure': customer.tenure,
+        'MonthlyCharges': customer.MonthlyCharges,
+        'Contract': customer.Contract,
+        'InternetService': customer.InternetService,
+        'PaymentMethod': customer.PaymentMethod,
+        'OnlineSecurity': customer.OnlineSecurity,
+        'PaperlessBilling': customer.PaperlessBilling
+    }])
+
+    probability = pipeline.predict_proba(row)[:, 1][0]
+
+    return {
+        "churn_probability": float(probability),
+        "will_churn": bool(probability >= 0.5)
+    }
