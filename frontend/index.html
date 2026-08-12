@@ -289,7 +289,9 @@
 </div>
 
 <script>
-const API = "http://127.0.0.1:8000/predict";
+// root-relative: the API is served from the same origin as this page,
+// so this works in the container and in local dev without edits
+const API = "/predict";
 const CIRCUMFERENCE = 2 * Math.PI * 54;   // r=54 on the gauge ring
 
 const RISK = "#d64545";
@@ -446,10 +448,9 @@ form.addEventListener("submit", async e => {
     renderFactors(data.top_factors || []);
 
   } catch (err) {
-    // network failure, server down, or the browser blocking the call (CORS)
+    // network failure or the server went away mid-request
     showError("Couldn't reach the API",
-      `<p>No response from <code>${API}</code>. Make sure the server is running, and that
-       it allows cross-origin requests from this page.</p>`);
+      `<p>No response from <code>${API}</code>. Check that the service is still running.</p>`);
   } finally {
     btn.disabled = false;
     btn.textContent = "Predict";

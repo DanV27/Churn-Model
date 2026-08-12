@@ -5,9 +5,11 @@ import shap
 import pandas as pd
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-MODEL_PATH = Path(__file__).resolve().parent / 'model' / 'churn_model.pkl'
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR / 'model' / 'churn_model.pkl'
 pipeline = joblib.load(MODEL_PATH)
 
 # pull the fitted pieces straight out of the saved pipeline — no retraining
@@ -70,7 +72,11 @@ def health_check():
 
 @app.get("/")
 def home():
-    return {"message": "Welcome! Go to /health for the health check."}
+    return {"message": "Welcome! The dashboard is at /app, the health check at /health."}
+
+# serve the dashboard from this same app, so page and API share an origin.
+# anchored to BASE_DIR so it works whatever directory uvicorn is launched from.
+app.mount("/app", StaticFiles(directory=BASE_DIR / 'frontend', html=True), name="frontend")
 
 @app.post("/predict", response_model=PredictionResponse)
 def predict(customer: CustomerFeatures):
