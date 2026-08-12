@@ -1,0 +1,20 @@
+# virtualenv and bytecode
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# vcs and editor
+.git/
+.gitignore
+.idea/
+.DS_Store
+
+# docker's own files
+Dockerfile
+.dockerignore
+
+# training artifacts — not needed at runtime.
+# model/churn_model.pkl is deliberately NOT excluded; the app loads it at startup.
+model/train.py
+model/*.csv
