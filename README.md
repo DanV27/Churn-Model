@@ -109,8 +109,38 @@ differently than training did:
 `class_weight='balanced'` matters here: at a 73/27 split, an unweighted model can score
 well on accuracy while barely catching the customers you care about.
 
-Run `python model/train.py` to see the full evaluation — classification report,
-confusion matrix, 5-fold cross-validation and the tuned metrics all print to stdout.
+### Results
+
+Measured on a held-out test set of 1,409 customers (20% of the data), before and after
+the grid search:
+
+| Metric | Baseline | Tuned |
+|---|---|---|
+| Accuracy | 0.7800 | 0.7793 |
+| Precision | 0.6026 | 0.5610 |
+| Recall | 0.4960 | **0.7641** |
+| F1 | 0.5441 | 0.6470 |
+| ROC-AUC | 0.8054 | **0.8559** |
+
+Accuracy didn't move. Recall went from 0.50 to 0.76.
+
+That trade is the whole point, and it's why accuracy is the wrong number to tune on
+here. The baseline model missed half the customers who actually left. The tuned model
+catches three quarters of them, paying for it with precision — 0.60 down to 0.56, so
+more customers get flagged who would have stayed anyway. For churn that's the right
+direction: a retention offer sent to someone who wasn't leaving costs a discount, while
+a customer who leaves unnoticed costs the whole account.
+
+Selected by `GridSearchCV` on ROC-AUC: `max_depth=10`, `n_estimators=200`, best CV
+score 0.8368. Five-fold cross-validation on the untuned pipeline gives ROC-AUC
+0.799 ± 0.013, so the fold-to-fold spread is small.
+
+By feature importance, `tenure` (0.31) and `MonthlyCharges` (0.22) dominate, followed by
+a two-year contract (0.12) and fiber service (0.09).
+
+Run `python model/train.py` to reproduce all of it — classification reports, the
+confusion matrix and the per-fold scores print to stdout. It's seeded with
+`random_state=42`, so the numbers above come out identical.
 
 ## Project layout
 
