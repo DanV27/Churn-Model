@@ -1,3 +1,4 @@
+import shap
 import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
@@ -133,3 +134,6 @@ feature_importance_df = pd.DataFrame({
 
 print(feature_importance_df)
 print(len(importances), len(feature_names))
+
+
+
