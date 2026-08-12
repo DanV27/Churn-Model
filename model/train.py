@@ -1,6 +1,7 @@
 import shap
 import joblib
 import pandas as pd
+from pathlib import Path
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.compose import ColumnTransformer
@@ -11,8 +12,13 @@ from sklearn.metrics import (
     classification_report, confusion_matrix
 )
 
+# paths are anchored to this file, so the script runs from any working directory
+MODEL_DIR = Path(__file__).resolve().parent
+DATA_PATH = MODEL_DIR / 'WA_Fn-UseC_-Telco-Customer-Churn.csv'
+MODEL_PATH = MODEL_DIR / 'churn_model.pkl'
+
 # ---------- LOAD DATA ----------
-df = pd.read_csv('WA_Fn-UseC_-Telco-Customer-Churn.csv')
+df = pd.read_csv(DATA_PATH)
 
 # keep only the 7 contract features + the target
 df = df[['tenure', 'MonthlyCharges', 'Contract', 'InternetService',
@@ -115,8 +121,8 @@ print(f"ROC-AUC:   {roc_auc_tuned:.4f}")
 
 print("====================== SAVING MODEL =======================")
 # ONE file now — the pipeline holds the encoder, scaler, AND model together
-joblib.dump(best_model, "churn_model.pkl")
-print("Saved full pipeline to 'churn_model.pkl'")
+joblib.dump(best_model, MODEL_PATH)
+print(f"Saved full pipeline to '{MODEL_PATH}'")
 # (no more scaler.pkl — the scaler lives inside the pipeline)
 
 print('=====================================================================')

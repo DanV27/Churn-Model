@@ -1,11 +1,13 @@
 from typing import Literal
+from pathlib import Path
 import joblib
 import shap
 import pandas as pd
 from fastapi import FastAPI, status
 from pydantic import BaseModel
 
-pipeline = joblib.load('model/churn_model.pkl')
+MODEL_PATH = Path(__file__).resolve().parent / 'model' / 'churn_model.pkl'
+pipeline = joblib.load(MODEL_PATH)
 
 # pull the fitted pieces straight out of the saved pipeline — no retraining
 preprocessor = pipeline.named_steps['preprocessor']
@@ -22,6 +24,19 @@ class CustomerFeatures(BaseModel):
     PaymentMethod: Literal["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"]
     OnlineSecurity: Literal["Yes", "No", "No internet service"]
     PaperlessBilling: Literal["Yes", "No"]
+
+# the raw input columns, straight from the schema above — used to map each
+# encoded column ('cat__Contract_Two year') back to the feature it came from
+INPUT_COLUMNS = sorted(CustomerFeatures.model_fields, key=len, reverse=True)
+
+def original_feature(encoded_name: str) -> str:
+    """'num__tenure' -> 'tenure';  'cat__Contract_Two year' -> 'Contract'."""
+    stripped = encoded_name.split('__', 1)[1]
+    # longest name first, so a column like 'Tech_Support' wins over 'Tech'
+    for column in INPUT_COLUMNS:
+        if stripped == column or stripped.startswith(column + '_'):
+            return column
+    return stripped
 
 # 2. Response schema — what the caller gets back
 
@@ -63,8 +78,7 @@ def predict(customer: CustomerFeatures):
     # group encoded columns back to original features
     impacts = {}
     for name, val in zip(feature_names, customer_shap):
-        # 'num__tenure' -> 'tenure';  'cat__Contract_Two year' -> 'Contract'
-        original = name.split('__')[1].split('_')[0]
+        original = original_feature(name)
         impacts[original] = impacts.get(original, 0) + val
 
     # top 3 by absolute impact
