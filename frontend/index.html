@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Churn Risk Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e3e6ea;
+    --text: #1a1d21;
+    --muted: #6b727c;
+    --accent: #3b5bdb;
+    --accent-hover: #314bb8;
+    --risk: #d64545;
+    --safe: #2f9e5f;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* a display rule beats the [hidden] attribute, so make hidden win outright */
+  [hidden] { display: none !important; }
+
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1020px; margin: 0 auto; }
+
+  header { margin-bottom: 28px; }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+
+  .card h2 {
+    margin: 0 0 18px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #3d434b;
+  }
+  .field input, .field select {
+    width: 100%;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .field input:focus, .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(59, 91, 219, .12);
+  }
+
+  button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 16px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); }
+  button:disabled { opacity: .6; cursor: default; }
+
+  .spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    margin-right: 7px;
+    vertical-align: -1px;
+    border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* results */
+  .results { display: flex; flex-direction: column; gap: 20px; }
+
+  .placeholder {
+    padding: 56px 22px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .gauge-row { display: flex; align-items: center; gap: 26px; }
+
+  .gauge { position: relative; flex: none; width: 128px; height: 128px; }
+  .gauge svg { transform: rotate(-90deg); }
+  .gauge .track { stroke: #eceef1; }
+  .gauge .value {
+    transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1), stroke .3s;
+    stroke-linecap: round;
+  }
+  .gauge .pct {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 27px; font-weight: 600; letter-spacing: -0.02em;
+  }
+
+  .verdict { min-width: 0; }
+  .pill {
+    display: inline-block;
+    padding: 4px 11px;
+    margin-bottom: 9px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 999px;
+  }
+  .pill.risk { color: #8f2222; background: #fdeaea; }
+  .pill.safe { color: #1d6b40; background: #e7f6ec; }
+  .verdict p { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+  .chart-box { position: relative; height: 210px; }
+
+  .error {
+    padding: 13px 15px;
+    background: #fdeaea;
+    border: 1px solid #f4c9c9;
+    border-radius: 8px;
+    color: #8f2222;
+    font-size: 13.5px;
+  }
+  .error strong { display: block; margin-bottom: 3px; font-weight: 600; }
+  .error ul { margin: 6px 0 0; padding-left: 18px; }
+  .error li { margin-top: 2px; }
+  .error code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+  }
+
+  @media (max-width: 760px) {
+    .grid { grid-template-columns: 1fr; }
+    .gauge-row { gap: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Churn Risk Dashboard</h1>
+    <p>Score a customer against the trained model and see which factors drive the result.</p>
+  </header>
+
+  <div class="grid">
+
+    <form class="card" id="form" novalidate>
+      <h2>Customer</h2>
+
+      <div class="field">
+        <label for="tenure">Tenure (months)</label>
+        <input type="number" id="tenure" min="0" step="1" value="12" required>
+      </div>
+
+      <div class="field">
+        <label for="MonthlyCharges">Monthly charges ($)</label>
+        <input type="number" id="MonthlyCharges" min="0" step="0.01" value="79.90" required>
+      </div>
+
+      <div class="field">
+        <label for="Contract">Contract</label>
+        <select id="Contract">
+          <option>Month-to-month</option>
+          <option>One year</option>
+          <option>Two year</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="InternetService">Internet service</label>
+        <select id="InternetService">
+          <option>DSL</option>
+          <option selected>Fiber optic</option>
+          <option>No</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="PaymentMethod">Payment method</label>
+        <select id="PaymentMethod">
+          <option>Electronic check</option>
+          <option>Mailed check</option>
+          <option>Bank transfer (automatic)</option>
+          <option>Credit card (automatic)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="OnlineSecurity">Online security</label>
+        <select id="OnlineSecurity">
+          <option>Yes</option>
+          <option selected>No</option>
+          <option>No internet service</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="PaperlessBilling">Paperless billing</label>
+        <select id="PaperlessBilling">
+          <option selected>Yes</option>
+          <option>No</option>
+        </select>
+      </div>
+
+      <button type="submit" id="submit">Predict</button>
+    </form>
+
+    <div class="results">
+      <div id="error" hidden role="alert"></div>
+
+      <div class="card" id="verdictCard">
+        <h2>Prediction</h2>
+        <div class="placeholder" id="placeholder">
+          Fill in the customer details and hit Predict.
+        </div>
+
+        <div class="gauge-row" id="gaugeRow" hidden aria-live="polite">
+          <div class="gauge">
+            <svg width="128" height="128" viewBox="0 0 128 128">
+              <circle class="track" cx="64" cy="64" r="54" fill="none" stroke-width="11"></circle>
+              <circle class="value" id="gaugeArc" cx="64" cy="64" r="54" fill="none" stroke-width="11"
+                      stroke-dasharray="339.29" stroke-dashoffset="339.29"></circle>
+            </svg>
+            <div class="pct" id="pct">—</div>
+          </div>
+          <div class="verdict">
+            <span class="pill" id="pill"></span>
+            <p id="verdictText"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="factorsCard" hidden>
+        <h2>Top contributing factors</h2>
+        <div class="chart-box"><canvas id="chart"></canvas></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = "http://127.0.0.1:8000/predict";
+const CIRCUMFERENCE = 2 * Math.PI * 54;   // r=54 on the gauge ring
+
+const RISK = "#d64545";
+const SAFE = "#2f9e5f";
+
+const el = id => document.getElementById(id);
+const form = el("form"), btn = el("submit"), errBox = el("error");
+let chart = null;
+
+const FIELDS = ["tenure", "MonthlyCharges", "Contract", "InternetService",
+                "PaymentMethod", "OnlineSecurity", "PaperlessBilling"];
+
+function readForm() {
+  const body = {};
+  for (const f of FIELDS) body[f] = el(f).value;
+  // the API is strictly typed: these two must be numbers, not strings
+  body.tenure = parseInt(body.tenure, 10);
+  body.MonthlyCharges = parseFloat(body.MonthlyCharges);
+  return body;
+}
+
+function showError(title, detail) {
+  errBox.innerHTML = `<strong>${title}</strong>${detail || ""}`;
+  errBox.className = "error";
+  errBox.hidden = false;
+}
+
+function clearError() {
+  errBox.hidden = true;
+  errBox.innerHTML = "";
+}
+
+// FastAPI 422 -> {"detail":[{"loc":["body","tenure"],"msg":"...."}, ...]}
+function formatValidationErrors(detail) {
+  if (!Array.isArray(detail)) {
+    return `<p>${typeof detail === "string" ? detail : JSON.stringify(detail)}</p>`;
+  }
+  const items = detail.map(d => {
+    const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : "request";
+    return `<li><code>${field}</code> — ${d.msg || "invalid value"}</li>`;
+  }).join("");
+  return `<ul>${items}</ul>`;
+}
+
+function renderGauge(probability, willChurn) {
+  const pct = Math.round(probability * 100);
+  const color = willChurn ? RISK : SAFE;
+
+  el("placeholder").hidden = true;
+  el("gaugeRow").hidden = false;
+
+  const arc = el("gaugeArc");
+  arc.style.stroke = color;
+  arc.setAttribute("stroke-dashoffset", CIRCUMFERENCE * (1 - probability));
+
+  const pctEl = el("pct");
+  pctEl.textContent = pct + "%";
+  pctEl.style.color = color;
+
+  const pill = el("pill");
+  pill.textContent = willChurn ? "Likely to churn" : "Likely to stay";
+  pill.className = "pill " + (willChurn ? "risk" : "safe");
+
+  el("verdictText").textContent =
+    `The model puts this customer's churn probability at ${(probability * 100).toFixed(1)}%.`;
+}
+
+function renderFactors(factors) {
+  el("factorsCard").hidden = false;
+
+  // impact can be signed; bar length is magnitude, colour comes from direction
+  const labels = factors.map(f => f.feature);
+  const values = factors.map(f => Math.abs(f.impact));
+  const colors = factors.map(f => f.direction === "increases risk" ? RISK : SAFE);
+
+  if (chart) chart.destroy();
+  chart = new Chart(el("chart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 3,
+        barThickness: 26
+      }]
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const f = factors[ctx.dataIndex];
+              return `${f.impact >= 0 ? "+" : ""}${f.impact} — ${f.direction}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          title: { display: true, text: "SHAP impact (magnitude)", color: "#6b727c",
+                   font: { size: 11 } },
+          grid: { color: "#eef0f3" },
+          ticks: { color: "#6b727c", font: { size: 11 } }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: "#3d434b", font: { size: 12.5 } }
+        }
+      }
+    }
+  });
+}
+
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  clearError();
+
+  const body = readForm();
+  if (Number.isNaN(body.tenure) || Number.isNaN(body.MonthlyCharges)) {
+    showError("Check the form", "<p>Tenure and monthly charges both need a number.</p>");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Predicting…';
+
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      let detail = null;
+      try { detail = (await res.json()).detail; } catch (_) { /* not JSON */ }
+      if (res.status === 422) {
+        showError("The API rejected these values", formatValidationErrors(detail));
+      } else {
+        showError(`API error ${res.status}`,
+          `<p>${detail ? JSON.stringify(detail) : res.statusText || "The request failed."}</p>`);
+      }
+      return;
+    }
+
+    const data = await res.json();
+    renderGauge(data.churn_probability, data.will_churn);
+    renderFactors(data.top_factors || []);
+
+  } catch (err) {
+    // network failure, server down, or the browser blocking the call (CORS)
+    showError("Couldn't reach the API",
+      `<p>No response from <code>${API}</code>. Make sure the server is running, and that
+       it allows cross-origin requests from this page.</p>`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Predict";
+  }
+});
+</script>
+</body>
+</html>

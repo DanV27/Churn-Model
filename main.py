@@ -4,6 +4,7 @@ import joblib
 import shap
 import pandas as pd
 from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 MODEL_PATH = Path(__file__).resolve().parent / 'model' / 'churn_model.pkl'
@@ -52,6 +53,16 @@ class PredictionResponse(BaseModel):
     top_factors: list[Factor]
 
 app = FastAPI()
+
+# the dashboard is served from a different port, so the browser sends a CORS
+# preflight before every POST — without this it never reaches the endpoint.
+# "*" is fine for local dev; narrow it to real origins before deploying.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/health", status_code=status.HTTP_200_OK)
 def health_check():
