@@ -1,3 +1,4 @@
+![CI](https://github.com/DanV27/Churn-Model/actions/workflows/ci.yml/badge.svg)
 # Churn Risk Dashboard
 
 A customer churn prediction service: a tuned scikit-learn pipeline behind a FastAPI
