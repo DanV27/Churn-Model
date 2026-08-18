@@ -167,6 +167,14 @@ Moving from 0.50 to 0.30 lifts recall from 0.76 to **0.91** and cuts expected co
 is the honest trade: catching 43 more of the ones who actually leave means reaching out
 to people who would have stayed.
 
+The exact threshold is environment-specific. `random_state=42` fixes the split and the
+forest, but floating-point summation order differs across Python and BLAS builds, nudging
+probabilities in their final digits — enough to shift where the cost curve bottoms out.
+CI on Python 3.11 selects 0.32 where Python 3.9 selects 0.30. The curve is flat near its
+minimum (cost 561 against 558), so the conclusion holds either way; expect something in
+the 0.30–0.32 range on your machine rather than an exact match to the table above. The
+same applies at the last decimal to the metrics in the previous section.
+
 The cost ratio is two constants at the top of `train.py`. Change them and the chosen
 threshold moves with them, which is the point — the number isn't a magic constant, it's
 the output of an assumption you can state and argue with.
