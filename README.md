@@ -15,6 +15,7 @@ moved the prediction most, via SHAP:
 {
   "churn_probability": 0.7611702883107244,
   "will_churn": true,
+  "threshold": 0.3,
   "top_factors": [
     { "feature": "InternetService", "impact": 0.1162, "direction": "increases risk" },
     { "feature": "Contract",        "impact": 0.0863, "direction": "increases risk" },
@@ -63,8 +64,9 @@ a clear message if you haven't trained yet.
 
 ### `POST /predict`
 
-All seven fields are required. The categoricals are typed as literals, so anything
-outside the allowed set comes back as a `422` naming the offending field.
+All seven feature fields are required. The categoricals are typed as literals, so
+anything outside the allowed set comes back as a `422` naming the offending field.
+`threshold` is optional — omit it to use the cost-minimising default described below.
 
 ```json
 {
@@ -87,6 +89,7 @@ outside the allowed set comes back as a `422` naming the offending field.
 | `PaymentMethod` | str | `Electronic check`, `Mailed check`, `Bank transfer (automatic)`, `Credit card (automatic)` |
 | `OnlineSecurity` | str | `Yes`, `No`, `No internet service` |
 | `PaperlessBilling` | str | `Yes`, `No` |
+| `threshold` | float | *optional*, 0 < t < 1 — overrides the default decision threshold |
 
 ## The model
 
@@ -142,17 +145,49 @@ Run `python model/train.py` to reproduce all of it — classification reports, t
 confusion matrix and the per-fold scores print to stdout. It's seeded with
 `random_state=42`, so the numbers above come out identical.
 
+### Choosing the decision threshold
+
+`predict()` defaults to flagging anything above 0.5, which quietly assumes a false
+positive and a false negative cost the same. In churn they don't: an unnecessary
+retention offer costs a discount, while a customer who leaves unnoticed costs the whole
+account. `train.py` therefore sweeps every threshold from 0.01 to 0.99 and picks the one
+that minimises expected cost at a 5:1 ratio, writing it to `model/threshold.json` for
+the API to load.
+
+| Threshold | Precision | Recall | Flagged | Expected cost |
+|---|---|---|---|---|
+| 0.20 | 0.4092 | 0.9544 | 870 | 599 |
+| **0.30** | **0.4663** | **0.9088** | **727** | **558** |
+| 0.40 | 0.5081 | 0.8418 | 618 | 599 |
+| 0.50 *(default)* | 0.5610 | 0.7641 | 508 | 663 |
+| 0.70 | 0.6700 | 0.5389 | 300 | 959 |
+
+Moving from 0.50 to 0.30 lifts recall from 0.76 to **0.91** and cuts expected cost by
+**15.8%**. It costs precision — 0.56 down to 0.47 — and flags 219 more customers, which
+is the honest trade: catching 43 more of the ones who actually leave means reaching out
+to people who would have stayed.
+
+The cost ratio is two constants at the top of `train.py`. Change them and the chosen
+threshold moves with them, which is the point — the number isn't a magic constant, it's
+the output of an assumption you can state and argue with.
+
+Callers can override it per request with an optional `threshold` field, and every
+response reports the value it applied.
+
 ## Project layout
 
 ```
 .
 ├── main.py              FastAPI app: /predict, /health, and the dashboard mount
 ├── model/
-│   ├── train.py         trains, tunes, evaluates, saves the pipeline
+│   ├── train.py         trains, tunes, evaluates, picks the threshold, saves
 │   ├── churn_model.pkl  the fitted pipeline (gitignored — run train.py)
+│   ├── threshold.json   cost-minimising decision threshold
 │   └── WA_Fn-UseC_-Telco-Customer-Churn.csv
 ├── frontend/
 │   └── index.html       the dashboard: plain HTML/CSS/JS, Chart.js from a CDN
+├── tests/               pytest suite
+├── .github/workflows/   CI: train, test, build, smoke-test the container
 ├── docs/
 ├── Dockerfile
 ├── .dockerignore
@@ -162,6 +197,33 @@ confusion matrix and the per-fold scores print to stdout. It's seeded with
 The dashboard is deliberately dependency-free — no framework, no build step, no
 `node_modules`. FastAPI serves it as a static file, so the page and the API share an
 origin and `fetch` can just call `/predict`.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+33 tests covering the API contract, the threshold logic and the model artifact. The ones
+worth knowing about:
+
+- **SHAP attribution** — every encoded column must resolve back to a real input feature.
+  Includes a regression test for a bug where splitting `cat__Contract_Two year` on the
+  first underscore silently mis-grouped any feature name containing one, so a future
+  `Tech_Support` column would have been attributed to a feature called `Tech`.
+- **Pickle compatibility** — asserts the pipeline unpickles and exposes all 12 encoded
+  columns, catching the scikit-learn version drift described below before it reaches a
+  container.
+- **Threshold behaviour** — that the API honours the trained threshold rather than 0.5,
+  that an override flips the verdict without moving the probability, and that the
+  threshold field never leaks into the model's feature columns.
+- **Schema rejection** — each of the five categorical fields is parametrised to confirm
+  a bad value returns `422` naming the offending field.
+
+GitHub Actions runs the whole chain on every push and pull request: install, train the
+model, run the tests, build the Docker image, then start the container and hit
+`/health` and `/predict` against it.
 
 ## A note on the pinned dependencies
 

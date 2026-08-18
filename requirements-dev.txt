@@ -1,0 +1,4 @@
+# Test-only dependencies. Kept out of requirements.txt so the Docker image
+# doesn't ship a test client: pip install -r requirements-dev.txt
+httpx==0.28.1
+pytest==8.4.2

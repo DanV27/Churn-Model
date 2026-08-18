@@ -1,5 +1,7 @@
+import json
 import shap
 import joblib
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
@@ -16,6 +18,13 @@ from sklearn.metrics import (
 MODEL_DIR = Path(__file__).resolve().parent
 DATA_PATH = MODEL_DIR / 'WA_Fn-UseC_-Telco-Customer-Churn.csv'
 MODEL_PATH = MODEL_DIR / 'churn_model.pkl'
+THRESHOLD_PATH = MODEL_DIR / 'threshold.json'
+
+# A missed churner costs far more than a needless retention offer: you lose the
+# account, they get a discount they might not have needed. 5:1 encodes that
+# asymmetry — change these two numbers and the chosen threshold moves with them.
+FALSE_NEGATIVE_COST = 5.0   # customer churns and we did nothing
+FALSE_POSITIVE_COST = 1.0   # retention offer sent to someone who would have stayed
 
 # ---------- LOAD DATA ----------
 df = pd.read_csv(DATA_PATH)
@@ -118,6 +127,51 @@ print(f"Precision: {precision_tuned:.4f}")
 print(f"Recall:    {recall_tuned:.4f}")
 print(f"F1-Score:  {f1_tuned:.4f}")
 print(f"ROC-AUC:   {roc_auc_tuned:.4f}")
+
+
+print("=================== DECISION THRESHOLD SELECTION ===================")
+# predict() hardcodes 0.5, which silently assumes both mistakes cost the same.
+# They don't, so pick the threshold that minimises expected cost instead.
+thresholds = np.arange(0.01, 1.00, 0.01)
+rows = []
+for t in thresholds:
+    predicted = (y_proba_tuned >= t).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_test, predicted).ravel()
+    rows.append({
+        'threshold': round(float(t), 2),
+        'cost': fn * FALSE_NEGATIVE_COST + fp * FALSE_POSITIVE_COST,
+        'precision': precision_score(y_test, predicted, zero_division=0),
+        'recall': recall_score(y_test, predicted, zero_division=0),
+        'f1': f1_score(y_test, predicted, zero_division=0),
+        'flagged': int(tp + fp),
+    })
+
+sweep_df = pd.DataFrame(rows)
+best_row = sweep_df.loc[sweep_df['cost'].idxmin()]
+best_threshold = float(best_row['threshold'])
+default_row = sweep_df[sweep_df['threshold'] == 0.50].iloc[0]
+
+print(f"Cost model: false negative = {FALSE_NEGATIVE_COST}, false positive = {FALSE_POSITIVE_COST}")
+print(sweep_df[sweep_df['threshold'].isin([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])]
+      .to_string(index=False))
+print()
+print(f"Default 0.50  -> cost {default_row['cost']:.0f}, "
+      f"precision {default_row['precision']:.4f}, recall {default_row['recall']:.4f}, "
+      f"flagged {default_row['flagged']}")
+print(f"Chosen {best_threshold:.2f}  -> cost {best_row['cost']:.0f}, "
+      f"precision {best_row['precision']:.4f}, recall {best_row['recall']:.4f}, "
+      f"flagged {int(best_row['flagged'])}")
+print(f"Expected cost reduction: {(1 - best_row['cost'] / default_row['cost']) * 100:.1f}%")
+
+THRESHOLD_PATH.write_text(json.dumps({
+    'threshold': best_threshold,
+    'false_negative_cost': FALSE_NEGATIVE_COST,
+    'false_positive_cost': FALSE_POSITIVE_COST,
+    'test_set_precision': round(float(best_row['precision']), 4),
+    'test_set_recall': round(float(best_row['recall']), 4),
+    'test_set_f1': round(float(best_row['f1']), 4),
+}, indent=2) + "\n")
+print(f"Wrote {THRESHOLD_PATH}")
 
 print("====================== SAVING MODEL =======================")
 # ONE file now — the pipeline holds the encoder, scaler, AND model together
