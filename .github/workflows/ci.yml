@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.11 matches the Dockerfile base image
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      # churn_model.pkl is gitignored, so CI trains it. This also means every
+      # push exercises the training pipeline, not just the serving code.
+      - name: Train the model
+        run: python model/train.py
+
+      - name: Run tests
+        run: pytest -q
+
+      # proves the image still builds against the pinned dependency set —
+      # the check that would have caught the scikit-learn unpickling failure
+      - name: Build the Docker image
+        run: docker build -t churn-service .
+
+      - name: Smoke-test the container
+        run: |
+          docker run -d --name churn-ci -p 8000:8000 churn-service
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health
+          curl -sf -X POST http://127.0.0.1:8000/predict \
+            -H 'Content-Type: application/json' \
+            -d '{"tenure":12,"MonthlyCharges":79.90,"Contract":"Month-to-month","InternetService":"Fiber optic","PaymentMethod":"Electronic check","OnlineSecurity":"No","PaperlessBilling":"Yes"}'
+          docker rm -f churn-ci

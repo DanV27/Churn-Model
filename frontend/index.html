@@ -158,6 +158,7 @@
   .pill.risk { color: #8f2222; background: #fdeaea; }
   .pill.safe { color: #1d6b40; background: #e7f6ec; }
   .verdict p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .verdict .muted { display: block; margin-top: 5px; font-size: 12.5px; opacity: .8; }
 
   .chart-box { position: relative; height: 210px; }
 
@@ -336,7 +337,7 @@ function formatValidationErrors(detail) {
   return `<ul>${items}</ul>`;
 }
 
-function renderGauge(probability, willChurn) {
+function renderGauge(probability, willChurn, threshold) {
   const pct = Math.round(probability * 100);
   const color = willChurn ? RISK : SAFE;
 
@@ -355,8 +356,10 @@ function renderGauge(probability, willChurn) {
   pill.textContent = willChurn ? "Likely to churn" : "Likely to stay";
   pill.className = "pill " + (willChurn ? "risk" : "safe");
 
-  el("verdictText").textContent =
-    `The model puts this customer's churn probability at ${(probability * 100).toFixed(1)}%.`;
+  el("verdictText").innerHTML =
+    `The model puts this customer's churn probability at ${(probability * 100).toFixed(1)}%. ` +
+    `<span class="muted">Flagged above ${(threshold * 100).toFixed(0)}%, the threshold that ` +
+    `minimises expected cost.</span>`;
 }
 
 function renderFactors(factors) {
@@ -444,7 +447,7 @@ form.addEventListener("submit", async e => {
     }
 
     const data = await res.json();
-    renderGauge(data.churn_probability, data.will_churn);
+    renderGauge(data.churn_probability, data.will_churn, data.threshold);
     renderFactors(data.top_factors || []);
 
   } catch (err) {

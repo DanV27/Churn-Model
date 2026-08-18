@@ -1,16 +1,25 @@
-from typing import Literal
+from typing import Literal, Optional
 from pathlib import Path
+import json
 import joblib
 import shap
 import pandas as pd
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / 'model' / 'churn_model.pkl'
+THRESHOLD_PATH = BASE_DIR / 'model' / 'threshold.json'
 pipeline = joblib.load(MODEL_PATH)
+
+# The decision threshold is chosen in train.py by minimising expected cost, not
+# left at 0.5 — a missed churner costs far more than a wasted retention offer.
+# Falls back to 0.5 if the file is absent so the service still starts.
+DEFAULT_THRESHOLD = 0.5
+if THRESHOLD_PATH.exists():
+    DEFAULT_THRESHOLD = float(json.loads(THRESHOLD_PATH.read_text())['threshold'])
 
 # pull the fitted pieces straight out of the saved pipeline — no retraining
 preprocessor = pipeline.named_steps['preprocessor']
@@ -27,10 +36,15 @@ class CustomerFeatures(BaseModel):
     PaymentMethod: Literal["Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"]
     OnlineSecurity: Literal["Yes", "No", "No internet service"]
     PaperlessBilling: Literal["Yes", "No"]
+    # optional per-request override; omit to use the cost-optimal default
+    threshold: Optional[float] = Field(default=None, gt=0.0, lt=1.0)
 
 # the raw input columns, straight from the schema above — used to map each
 # encoded column ('cat__Contract_Two year') back to the feature it came from
-INPUT_COLUMNS = sorted(CustomerFeatures.model_fields, key=len, reverse=True)
+INPUT_COLUMNS = sorted(
+    (f for f in CustomerFeatures.model_fields if f != 'threshold'),
+    key=len, reverse=True,
+)
 
 def original_feature(encoded_name: str) -> str:
     """'num__tenure' -> 'tenure';  'cat__Contract_Two year' -> 'Contract'."""
@@ -52,6 +66,7 @@ class Factor(BaseModel):
 class PredictionResponse(BaseModel):
     churn_probability: float
     will_churn: bool
+    threshold: float
     top_factors: list[Factor]
 
 app = FastAPI()
@@ -80,7 +95,9 @@ app.mount("/app", StaticFiles(directory=BASE_DIR / 'frontend', html=True), name=
 
 @app.post("/predict", response_model=PredictionResponse)
 def predict(customer: CustomerFeatures):
-    row = pd.DataFrame([customer.model_dump()])
+    features = customer.model_dump(exclude={'threshold'})
+    row = pd.DataFrame([features])
+    threshold = customer.threshold if customer.threshold is not None else DEFAULT_THRESHOLD
 
     # probability (same as before)
     probability = pipeline.predict_proba(row)[:, 1][0]
@@ -111,6 +128,7 @@ def predict(customer: CustomerFeatures):
 
     return {
         "churn_probability": float(probability),
-        "will_churn": bool(probability >= 0.5),
+        "will_churn": bool(probability >= threshold),
+        "threshold": threshold,
         "top_factors": top_factors
     }
